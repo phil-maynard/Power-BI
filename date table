@@ -1,0 +1,230 @@
+{
+    "name": "Ref_Dynamic_Calendar",
+    "description": "",
+    "version": "1.0",
+    "culture": "en-US",
+    "modifiedTime": "2025-11-07T16:54:10.4453082+00:00",
+    "ppdf:outputFileFormat": "csv",
+    "pbi:mashup": {
+        "fastCombine": false,
+        "allowNativeQueries": false,
+        "skipAutomaticHeaderAndTypeDetection": false,
+        "queriesMetadata": {
+            "Calendar": {
+                "queryId": "1c356bfe-6f91-4a88-a121-9d00e05c18a3",
+                "queryName": "Calendar",
+                "loadEnabled": true
+            },
+            "Calendar backup": {
+                "queryId": "b2a70e86-2f00-40f7-9c3b-12af00677821",
+                "queryName": "Calendar backup",
+                "loadEnabled": true
+            }
+        },
+        "document": "section Section1;\r\nshared Calendar = let\n  // Parameters – adjust as needed\n  StartDate = #date(2014, 4, 1),\n  Today = DateTime.Date(DateTimeZone.UtcNow()),\n  FiscalYearStartMonth = 4,\n  CurrentFYStart = #date(Date.Year(Today) - (if Date.Month(Today) < FiscalYearStartMonth then 1 else 0), FiscalYearStartMonth, 1),\n  EndDate = Date.AddDays(Date.AddYears(CurrentFYStart, 2), -1),\n  // NEW: Reference dates for \"last completed\" logic\n  LastCompletedDate = Date.AddDays(Date.StartOfMonth(Today), -1),\n  // last day of previous month\n  LastCompletedFY = if Date.Month(LastCompletedDate) >= FiscalYearStartMonth\n        then Date.Year(LastCompletedDate)\n        else Date.Year(LastCompletedDate) - 1,\n  LastCompletedFiscalMonth = if Date.Month(LastCompletedDate) >= FiscalYearStartMonth\n        then Date.Month(LastCompletedDate) - FiscalYearStartMonth + 1\n        else Date.Month(LastCompletedDate) + (12 - FiscalYearStartMonth + 1),\n  // Create date list\n  DayCount = Duration.Days(EndDate - StartDate) + 1,\n  Dates = List.Dates(StartDate, DayCount, #duration(1, 0, 0, 0)),\n  Calendar = Table.FromList(Dates, Splitter.SplitByNothing(), {\"Date\"}),\n  // Add derived columns\n  #\"Add Day of Week\" = Table.TransformColumns(\n        Table.AddColumn(Calendar, \"Day of Week\", each Date.DayOfWeek([Date], Day.Monday) + 1, Int64.Type),\n        {\"Date\", each Date.From(_), type date}\n    ),\n  #\"Add Day name\" = Table.TransformColumns(\n        Table.AddColumn(#\"Add Day of Week\", \"Day Name\", each Date.ToText([Date], \"dddd\"), type text),\n        {\"Date\", each Date.From(_), type date}\n    ),\n  #\"Add Week Number\" = Table.AddColumn(#\"Add Day name\", \"Week Number\", each Date.WeekOfYear([Date], Day.Monday), Int64.Type),\n  #\"Add Month Number\" = Table.AddColumn(#\"Add Week Number\", \"Month Number\", each Date.Month([Date]), Int64.Type),\n  #\"Add Month Name\" = Table.AddColumn(#\"Add Month Number\", \"Month Name\", each Date.ToText([Date], \"MMMM\"), type text),\n  #\"Add Year\" = Table.AddColumn(#\"Add Month Name\", \"Year\", each Date.ToText([Date], \"yyyy\")),\n  // Financial Year Start = 1st April\n  #\"Add Fiscal Year\" = Table.AddColumn(#\"Add Year\", \"Financial Year\", each let\n            year = Date.Year([Date]),\n            fy = if Date.Month([Date]) < FiscalYearStartMonth then year - 1 else year,\n            fyLabel = Text.PadStart(Text.End(Text.From(fy),2), 2, \"0\") & \"-\" & Text.PadStart(Text.End(Text.From(fy + 1),2), 2, \"0\")\n        in fyLabel, type text),\n  #\"Add Fiscal Year Number\" = Table.AddColumn(#\"Add Fiscal Year\", \"Financial Year Number\", each let\n            year = Date.Year([Date]),\n            fy = if Date.Month([Date]) < FiscalYearStartMonth then year - 1 else year\n        in fy, Int64.Type),\n  #\"Add Fiscal Year Long\" = Table.AddColumn(#\"Add Fiscal Year Number\", \"Financial Year Long Name\", each let\n            year = Date.Year([Date]),\n            fy = if Date.Month([Date]) < FiscalYearStartMonth then year - 1 else year,\n            fyLabel = Text.From(fy) & \"/\" & Text.PadStart(Text.End(Text.From(fy + 1),2), 2, \"0\")\n        in fyLabel, type text),\n  #\"Add Fiscal Month\" = Table.AddColumn(#\"Add Fiscal Year Long\", \"Financial Month\", each let\n            month = Date.Month([Date]),\n            fiscalMonth = if month >= FiscalYearStartMonth then month - FiscalYearStartMonth + 1 else month + (12 - FiscalYearStartMonth + 1)\n        in fiscalMonth, Int64.Type),\n  // Fiscal Quarter (aligned to April start)\n  #\"Add Fiscal Quarter\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Month\", \"Financial Quarter\", each let\n            fiscalMonth = [Financial Month],\n            quarter = \"Q\" & Text.From(Number.RoundUp(fiscalMonth / 3)),\n            fy = [Financial Year]\n        in fy & \" \" & quarter), {{\"Financial Quarter\", type text}}),\n  // Fiscal Quarter Number\n  #\"Add Fiscal Quarter Number\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Quarter\", \"Financial Quarter Number\", each let\n            fiscalMonth = [Financial Month],\n            quarter = Number.RoundUp(fiscalMonth / 3)\n        in quarter), {{\"Financial Quarter Number\", Int64.Type}}),\n  // Fiscal Quarter Long Name\n  #\"Add Fiscal Quarter Long Name\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Quarter Number\", \"Financial Quarter Long Name\", each let\n            fiscalMonth = [Financial Month],\n            quarter = \"Q\" & Text.From(Number.RoundUp(fiscalMonth / 3)),\n            fy = [Financial Year Long Name],\n            quarterNumber = Number.RoundUp(fiscalMonth / 3),\n            startFiscalMonth = ((quarterNumber - 1) * 3) + 1,\n            endFiscalMonth = startFiscalMonth + 2,\n            startDate = Date.From(Date.AddMonths(Date.StartOfMonth([Date]), startFiscalMonth - fiscalMonth)),\n            endDate = Date.From(Date.AddMonths(Date.StartOfMonth([Date]), endFiscalMonth - fiscalMonth)),\n            startMonthName = Date.ToText(startDate, \"MMMM\"),\n            endMonthName = Date.ToText(endDate, \"MMMM\"),\n            endYear = Date.Year(endDate),\n            longName = quarter & \" \" & fy & \" \" & startMonthName & \" to \" & endMonthName & \" \" & Text.From(endYear)\n        in longName), {{\"Financial Quarter Long Name\", type text}}),\n  // Fiscal Period label\n  #\"Add Fiscal Period\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Quarter Long Name\", \"Financial Period\", each let\n            fiscalMonth = [Financial Month],\n            fy = [Financial Year]\n        in fy & \" \" & (\"P\" & Text.PadStart(Text.From(fiscalMonth), 2, \"0\"))), {{\"Financial Period\", type text}}),\n  // >>> Financial Period Month (restored) <<<\n  #\"Add Fiscal Period Month\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Period\", \"Financial Period Month\", each let\n            monthName = Date.ToText([Date], \"MMMM\"),\n            fy = [Financial Year]\n        in fy & \" \" & monthName), {{\"Financial Period Month\", type text}}),\n  // Fiscal Period Long Name\n  #\"Add Fiscal Period Long Name\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Period Month\", \"Financial Period Long Name\", each let\n            fiscalMonth = [Financial Month]\n        in \"Period \" & Text.From(fiscalMonth) & \" - \" & Date.ToText([Date], \"MMMM yyyy\")), {{\"Financial Period Long Name\", type text}}),\n\n// ========================================\n// REPORTING PERIOD / QUARTER / YEAR LABELS\n// ========================================\n\n// 1️⃣  Reporting Period (last completed period basis)\n#\"Add Reporting Period\" =\n    Table.AddColumn(\n        #\"Add Fiscal Period Long Name\",\n        \"Reporting Period\",\n        each\n            let\n                fy = [Financial Year Number],\n                fm = [Financial Month],\n                key = fy * 12 + fm,\n                lastKey = LastCompletedFY * 12 + LastCompletedFiscalMonth,\n                diff = key - lastKey\n            in\n                if diff = 0 then\n                    \"Current\"\n                else if diff = 1 then\n                    \"Next\"\n                else if diff = -1 then\n                    \"Previous\"\n                else if diff < 0 and diff >= -12 then\n                    \"Previous (\" & Text.PadStart(Text.From(-diff), 2, \" \") & \" back)\"\n                else\n                    null,\n        type text\n    ),\n\n// 2️⃣  Reporting Quarter (simple form)\n#\"Add Reporting Quarter\" =\n    Table.AddColumn(\n        #\"Add Reporting Period\",\n        \"Reporting Quarter\",\n        each\n            let\n                fy = [Financial Year Number],\n                fq = [Financial Quarter Number],\n                lastFY = LastCompletedFY,\n                lastQtr = Number.RoundUp(LastCompletedFiscalMonth / 3),\n                diff = (fy * 4 + fq) - (lastFY * 4 + lastQtr)\n            in\n                if diff = 0 then\n                    \"Current\"\n                else if diff = -1 then\n                    \"Previous\"\n                else if diff = 1 then\n                    \"Next\"\n                else\n                    null,\n        type text\n    ),\n\n// 3️⃣  Reporting Year (simple form)\n#\"Add Reporting Year\" =\n    Table.AddColumn(\n        #\"Add Reporting Quarter\",\n        \"Reporting Year\",\n        each\n            let diff = [Financial Year Number] - LastCompletedFY\n            in\n                if diff = 0 then\n                    \"Current\"\n                else if diff = -1 then\n                    \"Previous\"\n                else if diff = 1 then\n                    \"Next\"\n                else\n                    null,\n        type text\n    ),\n    // Month offset relative to last completed period\n#\"Add Period Offset\" =\n    Table.AddColumn(\n        #\"Add Reporting Year\",\n        \"Reporting Period Offset\",\n        each\n            let\n                fy = [Financial Year Number],\n                fm = [Financial Month],\n                key = fy * 12 + fm,\n                lastKey = LastCompletedFY * 12 + LastCompletedFiscalMonth\n            in\n                key - lastKey,\n        Int64.Type\n    ),\n\n// Year offset relative to last completed FY\n#\"Add Year Offset\" =\n    Table.AddColumn(\n        #\"Add Period Offset\",\n        \"Reporting Year Offset\",\n        each [Financial Year Number] - LastCompletedFY,\n        Int64.Type\n    ),\n\n  #\"Add Reporting FY Period Status\" = Table.AddColumn(#\"Add Year Offset\", \"Reporting FY Period Status\", each let\n    fy = [Financial Year Number],\n    fm = [Financial Month],\n    status =\n        if fy < LastCompletedFY then \"Completed\"\n        else if fy = LastCompletedFY and fm <= LastCompletedFiscalMonth then \"Completed\"\n        else if fy = LastCompletedFY and fm = LastCompletedFiscalMonth + 1 then \"In Progress\"\n        else \"Future\"\nin\n    status, type text),\n  // Rename for clarity / consistency (as per your original)\n  Final = Table.RenameColumns(#\"Add Reporting FY Period Status\", {{\"Date\", \"Date\"}, {\"Day of Week\", \"Day Number\"}, {\"Day Name\", \"Day\"}, {\"Week Number\", \"Week Number\"}, {\"Month Number\", \"Month Number\"}, {\"Month Name\", \"Month\"}, {\"Financial Year\", \"Financial Year\"}, {\"Financial Quarter\", \"Financial Quarter\"}}),\n  #\"Transform columns\" = Table.TransformColumnTypes(Final, {{\"Year\", Int64.Type}}),\n  #\"Replace errors\" = Table.ReplaceErrorValues(#\"Transform columns\", {{\"Year\", null}}),\n  #\"Sorted rows\" = Table.Sort(#\"Replace errors\", {{\"Date\", Order.Descending}}),\n  #\"Reordered columns\" = Table.ReorderColumns(#\"Sorted rows\", {\"Date\", \"Day Number\", \"Day\", \"Week Number\", \"Month Number\", \"Month\", \"Year\", \"Financial Year\", \"Financial Quarter Number\", \"Financial Quarter\", \"Financial Month\", \"Financial Period\", \"Financial Period Month\", \"Financial Period Long Name\", \"Financial Year Number\", \"Financial Year Long Name\", \"Financial Quarter Long Name\", \"Reporting Year\", \"Reporting Period\"}),\n  #\"Renamed columns\" = Table.RenameColumns(#\"Reordered columns\", {{\"Financial Month\", \"Financial Period Number\"}, {\"Year\", \"Calendar Year\"}, {\"Month Number\", \"Calendar Month Number\"}, {\"Week Number\", \"Calendar Week Number\"}}),\n  #\"Transform columns 1\" = Table.TransformColumnTypes(#\"Renamed columns\", {{\"Financial Quarter Long Name\", type text}, {\"Financial Period Long Name\", type text}, {\"Financial Quarter Number\", Int64.Type}})\nin\n  #\"Transform columns 1\";\r\nshared #\"Calendar backup\" = let\n  // Parameters – adjust as needed\n  StartDate = #date(2014, 4, 1),\n  Today = DateTime.Date(DateTime.LocalNow()),\n  FiscalYearStartMonth = 4,\n  CurrentFYStart = #date(Date.Year(Today) - (if Date.Month(Today) < FiscalYearStartMonth then 1 else 0), FiscalYearStartMonth, 1),\n  EndDate = Date.AddDays(Date.AddYears(CurrentFYStart, 2), -1),\n  // Create date list\n  DayCount = Duration.Days(EndDate - StartDate) + 1,\n  Dates = List.Dates(StartDate, DayCount, #duration(1, 0, 0, 0)),\n  Calendar = Table.FromList(Dates, Splitter.SplitByNothing(), {\"Date\"}),\n  // Add derived columns\n  #\"Add Day of Week\" = Table.TransformColumns(\n        Table.AddColumn(Calendar, \"Day of Week\", each Date.DayOfWeek([Date], Day.Monday) + 1, Int64.Type),\n        {\"Date\", each Date.From(_), type date}\n    ),\n  #\"Add Day name\" = Table.TransformColumns(\n        Table.AddColumn(#\"Add Day of Week\", \"Day Name\", each Date.ToText([Date], \"dddd\"), type text),\n        {\"Date\", each Date.From(_), type date}\n    ),\n  #\"Add Week Number\" = Table.AddColumn(#\"Add Day name\", \"Week Number\", each Date.WeekOfYear([Date], Day.Monday), Int64.Type),\n  #\"Add Month Number\" = Table.AddColumn(#\"Add Week Number\", \"Month Number\", each Date.Month([Date]), Int64.Type),\n  #\"Add Month Name\" = Table.AddColumn(#\"Add Month Number\", \"Month Name\", each Date.ToText([Date], \"MMMM\"), type text),\n  #\"Add Year\" = Table.AddColumn(#\"Add Month Name\", \"Year\", each Date.ToText([Date], \"yyyy\")),\n  // Financial Year Start = 1st April\n  #\"Add Fiscal Year\" = Table.AddColumn(#\"Add Year\", \"Financial Year\", each let\n            year = Date.Year([Date]),\n            fy = if Date.Month([Date]) < FiscalYearStartMonth then year - 1 else year,\n            fyLabel = Text.PadStart(Text.End(Text.From(fy),2), 2, \"0\") & \"-\" & Text.PadStart(Text.End(Text.From(fy + 1),2), 2, \"0\")\n        in fyLabel, type text),\n  #\"Add Fiscal Year Number\" = Table.AddColumn(#\"Add Fiscal Year\", \"Financial Year Number\", each let\n            year = Date.Year([Date]),\n            fy = if Date.Month([Date]) < FiscalYearStartMonth then year - 1 else year\n        in fy, Int64.Type),\n  #\"Add Fiscal Year Long\" = Table.AddColumn(#\"Add Fiscal Year Number\", \"Financial Year Long Name\", each let\n            year = Date.Year([Date]),\n            fy = if Date.Month([Date]) < FiscalYearStartMonth then year - 1 else year,\n            fyLabel = Text.From(fy) & \"/\" & Text.PadStart(Text.End(Text.From(fy + 1),2), 2, \"0\")\n        in fyLabel, type text),\n  #\"Add Fiscal Month\" = Table.AddColumn(#\"Add Fiscal Year Long\", \"Financial Month\", each let\n            month = Date.Month([Date]),\n            fiscalMonth = if month >= FiscalYearStartMonth then month - FiscalYearStartMonth + 1 else month + (12 - FiscalYearStartMonth + 1),\n            period = \"P\" & Text.PadStart(Text.From(fiscalMonth), 2, \"0\"),\n            fy = [Financial Year]\n        in fiscalMonth, Int64.Type),\n  // Fiscal Quarter (aligned to April start)\n  #\"Add Fiscal Quarter\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Month\", \"Financial Quarter\", each let\n            month = Date.Month([Date]),\n            fiscalMonth = [Financial Month],\n            quarter = \"Q\" & Text.From(Number.RoundUp(fiscalMonth / 3)),\n            fy = [Financial Year]\n        in fy & \" \" & quarter), {{\"Financial Quarter\", type text}}),\n  // Fiscal Quarter (aligned to April start)\n  #\"Add Fiscal Quarter Number\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Quarter\", \"Financial Quarter Number\", each let\n            month = Date.Month([Date]),\n            fiscalMonth = [Financial Month],\n            quarter = Number.RoundUp(fiscalMonth / 3)\n        in quarter), {{\"Financial Quarter Number\", Int64.Type}}),\n  #\"Add Fiscal Quarter Long Name\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Quarter Number\", \"Financial Quarter Long Name\", each let\n            month = Date.Month([Date]),\n            fiscalMonth = [Financial Month],\n            quarter = \"Q\" & Text.From(Number.RoundUp(fiscalMonth / 3)),\n            fy = [Financial Year Long Name],\n            // Calculate start and end fiscal months\n            quarterNumber = Number.RoundUp(fiscalMonth / 3),\n            startFiscalMonth = ((quarterNumber - 1) * 3) + 1,\n            endFiscalMonth = startFiscalMonth + 2,\n            // Get actual dates for those months\n            startDate = Date.From(Date.AddMonths(Date.StartOfMonth([Date]), startFiscalMonth - fiscalMonth)),\n            endDate = Date.From(Date.AddMonths(Date.StartOfMonth([Date]), endFiscalMonth - fiscalMonth)),\n            // Get month names and year\n            startMonthName = Date.ToText(startDate, \"MMMM\"),\n            endMonthName = Date.ToText(endDate, \"MMMM\"),\n            endYear = Date.Year(endDate),\n           longName = quarter & \" \" & fy & \" \" & startMonthName & \" to \" & endMonthName & \" \" & Text.From(endYear)\n        in longName), {{\"Financial Quarter Number\",  type text}}),\n  #\"Add Fiscal Period\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Quarter Long Name\", \"Financial Period\", each let\n            month = Date.Month([Date]),\n            fiscalMonth = [Financial Month],\n            period = \"P\" & Text.PadStart(Text.From(fiscalMonth), 2, \"0\"),\n            fy = [Financial Year]\n        in fy & \" \" & period), {{\"Financial Period\", type text}}),\n  #\"Add Fiscal Period Month\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Period\", \"Financial Period Month\", each let\n            month = Date.ToText([Date], \"MMMM\"),\n            fiscalMonth = [Financial Month],\n            period = \"P\" & Text.PadStart(Text.From(fiscalMonth), 2, \"0\"),\n            fy = [Financial Year]\n        in fy & \" \" & month), {{\"Financial Period Month\", type text}}),\n  #\"Add Fiscal Period Long Name\" = Table.TransformColumnTypes(Table.AddColumn(#\"Add Fiscal Period Month\", \"Financial Period Long Name\", each let\n            fiscalMonth = [Financial Month],\n            period = \"Period \" & Text.PadStart(Text.From(fiscalMonth), 1, \"0\") & \" - \" & Date.ToText([Date], \"MMMM yyyy\")\n        in period), {{\"Financial Period\", type text}}),\n  // Rename for clarity / consistency\n  Final = Table.RenameColumns(#\"Add Fiscal Period Long Name\", {{\"Date\", \"Date\"}, {\"Day of Week\", \"Day Number\"}, {\"Day Name\", \"Day\"}, {\"Week Number\", \"Week Number\"}, {\"Month Number\", \"Month Number\"}, {\"Month Name\", \"Month\"}, {\"Financial Year\", \"Financial Year\"}, {\"Financial Quarter\", \"Financial Quarter\"}}),\n  #\"Transform columns\" = Table.TransformColumnTypes(Final, {{\"Year\", Int64.Type}}),\n  #\"Replace errors\" = Table.ReplaceErrorValues(#\"Transform columns\", {{\"Year\", null}}),\n  #\"Sorted rows\" = Table.Sort(#\"Replace errors\", {{\"Date\", Order.Descending}}),\n  #\"Reordered columns\" = Table.ReorderColumns(#\"Sorted rows\", {\"Date\", \"Day Number\", \"Day\", \"Week Number\", \"Month Number\", \"Month\", \"Year\", \"Financial Year\", \"Financial Quarter Number\", \"Financial Quarter\", \"Financial Month\", \"Financial Period\"}),\n  #\"Renamed columns\" = Table.RenameColumns(#\"Reordered columns\", {{\"Financial Month\", \"Financial Period Number\"}, {\"Year\", \"Calendar Year\"}, {\"Month Number\", \"Calendar Month Number\"}, {\"Week Number\", \"Calendar Week Number\"}}),\n  #\"Transform columns 1\" = Table.TransformColumnTypes(#\"Renamed columns\", {{\"Financial Quarter Long Name\", type text}, {\"Financial Period Long Name\", type text}, {\"Financial Quarter Number\", Int64.Type}}),\n  #\"Replace errors 1\" = Table.ReplaceErrorValues(#\"Transform columns 1\", {{\"Financial Quarter Long Name\", null}, {\"Financial Period Long Name\", null}})\nin\n  #\"Replace errors 1\";\r\n"
+    },
+    "annotations": [
+        {
+            "name": "pbi:QueryGroups",
+            "value": "[]"
+        }
+    ],
+    "entities": [
+        {
+            "$type": "LocalEntity",
+            "name": "Calendar",
+            "description": "",
+            "pbi:refreshPolicy": {
+                "$type": "FullRefreshPolicy",
+                "location": "Calendar.csv"
+            },
+            "attributes": [
+                {
+                    "name": "Date",
+                    "dataType": "date"
+                },
+                {
+                    "name": "Day Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Day",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Calendar Week Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Calendar Month Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Month",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Calendar Year",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Year",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Quarter Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Quarter",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Period Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Period",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Period Month",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Period Long Name",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Year Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Year Long Name",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Quarter Long Name",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Reporting Year",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Reporting Quarter",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Reporting Period",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Reporting Period Offset",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Reporting Year Offset",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Reporting FY Period Status",
+                    "dataType": "string"
+                }
+            ],
+            "partitions": [
+                {
+                    "name": "Part001",
+                    "refreshTime": "2025-11-15T01:08:31.8017491+00:00",
+                    "location": "https://wabiukscpcdsap1.blob.core.windows.net:443/0a000788-86a3-45ca-abd1-195ec82fd25b/Calendar.csv?snapshot=2025-11-15T01%3A08%3A31.7949201Z"
+                }
+            ]
+        },
+        {
+            "$type": "LocalEntity",
+            "name": "Calendar backup",
+            "description": "",
+            "pbi:refreshPolicy": {
+                "$type": "FullRefreshPolicy",
+                "location": "Calendar%20backup.csv"
+            },
+            "attributes": [
+                {
+                    "name": "Date",
+                    "dataType": "date"
+                },
+                {
+                    "name": "Day Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Day",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Calendar Week Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Calendar Month Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Month",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Calendar Year",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Year",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Year Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Year Long Name",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Quarter Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Quarter",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Period Number",
+                    "dataType": "int64"
+                },
+                {
+                    "name": "Financial Quarter Long Name",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Period",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Period Month",
+                    "dataType": "string"
+                },
+                {
+                    "name": "Financial Period Long Name",
+                    "dataType": "string"
+                }
+            ],
+            "partitions": [
+                {
+                    "name": "Part001",
+                    "refreshTime": "2025-11-15T01:09:02.1778302+00:00",
+                    "location": "https://wabiukscpcdsap1.blob.core.windows.net:443/0a000788-86a3-45ca-abd1-195ec82fd25b/Calendar%2520backup.csv?snapshot=2025-11-15T01%3A09%3A02.1696573Z"
+                }
+            ]
+        }
+    ]
+}
