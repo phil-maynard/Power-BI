@@ -1,4 +1,4 @@
-// fnDateCore
+// fnCalendarCore
 // Low-level engine: builds a date table between StartDate and EndDate
 // with calendar + fiscal (FY_*) columns.
 //
